@@ -121,14 +121,58 @@ class StrafulProvider:
             print("Error: you must setup a provider first.")
             return
         try:
-            (status_code, backends) = self._make_get_request(f"{self._asp_net_url}/api/backends")
+            response = self._make_get_request(f"{self._asp_net_url}/api/backends")
+            status_code = response.status_code
             if status_code == 500:
                 print("Internal server error.")
             elif status_code == 401:
                 print("You are not authorized to access this service. Perhaps you should try to authenticate again.")
             elif status_code == 200:
+                backends = response.json()
                 for backend in backends:
                     print(backend["name"], "-", "Online" if backend["online"] else "Offline")
+            else:
+                print(f"Request has failed with http status code: {status_code}.")
+        except Exception as ex:
+            print(ex)
+
+    def get_job_status(self, job):
+        if self._keycloak_openid is None:
+            print("Error: you must setup a provider first.")
+            return
+        if job.id is None:
+            print("This job invalid.")
+            return
+        try:
+            response = self._make_get_request(f"{self._asp_net_url}/api/job/status/{job.id()}")
+            status_code = response.status_code
+            if status_code == 500:
+                print("Internal server error.")
+            elif status_code == 401:
+                print("You are not authorized to access this service. Perhaps you should try to authenticate again.")
+            elif status_code == 200:
+                print("Job status: ", response.text)
+            else:
+                print(f"Request has failed with http status code: {status_code}.")
+        except Exception as ex:
+            print(ex)
+
+    def get_job_result(self, job):
+        if self._keycloak_openid is None:
+            print("Error: you must setup a provider first.")
+            return
+        if job.id is None:
+            print("This job invalid.")
+            return
+        try:
+            response = self._make_get_request(f"{self._asp_net_url}/api/job/result/{job.id()}")
+            status_code = response.status_code
+            if status_code == 500:
+                print("Internal server error.")
+            elif status_code == 401:
+                print("You are not authorized to access this service. Perhaps you should try to authenticate again.")
+            elif status_code == 200:
+                print(response.text)
             else:
                 print(f"Request has failed with http status code: {status_code}.")
         except Exception as ex:
@@ -137,15 +181,7 @@ class StrafulProvider:
     def _make_get_request(self, api_url):
         if self.is_token_expired():
             self._refresh_tokens()
-        
-        response = requests.get(api_url, headers={'Authorization': f'Bearer {self._access_token}'}, verify=self._verify)
-        
-        try:
-            json = response.json()
-        except:
-            json = "{}"
-            
-        return (response.status_code, json)
+        return requests.get(api_url, headers={'Authorization': f'Bearer {self._access_token}'}, verify=self._verify)
 
     def _make_post_request(self, api_url, data):
         if self.is_token_expired():
@@ -230,7 +266,7 @@ class StrafulProvider:
                 time.sleep(3)
 
             delta_t = time.time() - start_time
-                
+            
             try:
                 response = requests.get(self._show_code_callback_url, params={'state': self._state},  verify=self._verify)
                 if response.status_code == 400:
@@ -249,4 +285,3 @@ class StrafulProvider:
             print("Timeout reached. Authorization code not received.")
             
         raise AuthenticationFailure("Authorization code not received")
-    
