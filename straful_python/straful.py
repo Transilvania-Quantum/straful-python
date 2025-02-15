@@ -1,3 +1,5 @@
+import base64
+import io
 import json
 import requests
 import time
@@ -5,13 +7,13 @@ import uuid
 import webbrowser
 
 from keycloak import KeycloakOpenID
+from qiskit.qpy import dump
+from qiskit import QuantumCircuit
 from urllib.parse import urlencode
-
 
 class AuthenticationFailure(Exception):
     def __init__(self, message):
         self.message = message
-
 
 class Job:
     def __init__(self, job_id):
@@ -20,7 +22,6 @@ class Job:
     def id(self):
         return self._job_id
 
-
 class WorkflowJob:
     def __init__(self, job_id):
         self._job_id = job_id
@@ -28,12 +29,66 @@ class WorkflowJob:
     def id(self):
         return self._job_id
 
-
 class InputData:
-    def __init__(self, data_type, data_string):
-        self.data_type = data_type
-        self.data_string = data_string
+    def __init__(self, label=None, content=None):
+        self.data = {}
+        self.add_data(label, content)
 
+    def add_data(self, label, content):
+        self.check_label(label, content)
+        if label in ("pub", "pubs"):
+            content = self.format_pubs(label, content)
+        if type(content) == dict or type(content) == list or type(content) == tuple:
+            self.data[label] = json.dumps(content, indent=4)
+        elif type(content) == str:
+            self.data[label] = content
+        else:
+            raise Exception("Input data content must be either a dictionary, or a list/tuple of JSON serializable objects, or a string.")
+
+    def check_label(self, label, content):
+        if type(label) != str:
+            raise Exception("Input data label must be string.")
+        if not label in ["pub", "pubs", "molecule-info"]:
+            raise Exception("Only 'pub', 'pubs' or 'molecule-info' can be specified as a input data labels.")
+        if label == "pub" and type(content) != tuple and type(content) != QuantumCircuit:
+            raise Exception("For a PUB label the content of data can be a QuantumCircuit or a tuple containing a quantum circuit, optionally second a list of circuit parameters and optionally third a number of shots.")
+
+    def format_pubs(self, label, content):
+        if label == "pub":
+            return self.serialize_pub(content)
+        if label == "pubs":
+            content_list = []
+            for pub in content:
+                content_list.append(self.serialize_pub(pub))
+            return content_list
+
+    def serialize_circuit(self, qc):
+        buffer = io.BytesIO()
+        dump([qc], buffer)
+        qpy_binary_data = buffer.getvalue()
+        base64_encoded_circuit = base64.b64encode(qpy_binary_data).decode("utf-8")
+        return base64_encoded_circuit
+
+    def serialize_pub(self, pub):
+        paramaters = None
+        shots = None
+        if type(pub) == QuantumCircuit:
+            quantum_circuit = pub
+        elif type(pub) != tuple:
+            raise Exception("A pub can be either a quantum circuit or a tuple containing a quantum circuit, optionally second a list of circuit parameters and optionally third a number of shots.")
+        elif len(pub) == 3:
+            quantum_circuit, paramaters, shots = pub
+        elif len(pub) == 2:
+            quantum_circuit, paramaters = pub
+        elif len(pub) == 1:
+            quantum_circuit = pub[0]
+        else:
+            raise Exception("A pub can be a tuple with at most 3 elements: a quantum circuit, a list of circuit paramaters and a number of shots.")
+        if shots is not None and type(shots) != int:
+            raise Exception("The 'shots' in a PUB must be an integer and be positioned as the third element of a tuple specifying a PUB.")
+        if paramaters is not None and type(paramaters) != list:
+            raise Exception("The 'paramaters' in a PUB must be a list of floating point numbers and be positioned as the second element of a tuple specifying a PUB.")
+        return (self.serialize_circuit(quantum_circuit), paramaters, shots)
 
 class StrafulProvider:
 
@@ -142,36 +197,35 @@ In case the service has been recently started please wait 5 minutes for it to be
         if not self._verify_user_is_authenticated():
             return
         if not backend:
-            print("Please specify the backend name.")
+            print("Please specify a backend name.")
             return
         if not workflow_id:
             print("Please specify a workflow Id.")
             return
         if shots is None:
-            print("Please specify the number of shots.")
-            return
+            shots = 1024
         if not isinstance(shots, int):
-            print("The number of shots must be specified as an integer number.")
+            print("The number of shots must be an integer.")
             return
         if not self.is_valid_uuid(workflow_id):
             print("The specified workflow Id is not valid.")
             return
         try:
-            input_categories = []
+            input_data_labels = []
             input_data_items = []
             if type(input_data) == list:
                 for input_data_item in input_data:
-                    input_categories.append(input_data_item.data_type)
+                    input_data_labels.append(input_data_item.data_type)
                     input_data_items.append(input_data_item.data_string)
             else:
-                input_categories.append(input_data.data_type)
+                input_data_labels.append(input_data.data_type)
                 input_data_items.append(input_data.data_string)
             job_data = {
                 "BackendName": backend,
                 "WorkflowId": workflow_id,
                 "Shots": shots,
                 "Comments": comments,
-                "InputDataTypes": input_categories,
+                "InputDataTypes": input_data_labels,
                 "InputDataItems": input_data_items,
             }
             (status_code, result) = self._make_post_request(

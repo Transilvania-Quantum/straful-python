@@ -11,7 +11,7 @@ except:
 setup(
   name = 'straful-python',
   packages = ['straful_python'],  
-  version = '0.1.5',
+  version = '0.1.8',
   license='MIT',
   description = 'A python library for interacting with Straful quantum computing API backbone.',
   long_description=long_description,
@@ -19,7 +19,6 @@ setup(
   author = 'Radu Marginean',
   author_email = 'radu.marginean@transilvania-quantum.com',
   url = 'https://transilvania-quantum.com/',
-  #download_url = 'https://github.com/Transilvania-Quantum/straful-python/releases/tag/v0.1.5',
   keywords = ['quantum', 'computing', 'API backbone'],  
   install_requires=[            
           'click',
