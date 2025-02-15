@@ -32,7 +32,8 @@ class WorkflowJob:
 class InputData:
     def __init__(self, label=None, content=None):
         self.data = {}
-        self.add_data(label, content)
+        if label:
+            self.add_data(label, content)
 
     def add_data(self, label, content):
         self.check_label(label, content)
@@ -192,7 +193,7 @@ In case the service has been recently started please wait 5 minutes for it to be
             print(str(ex))
 
     def submit_workflow_job(
-        self, *, backend=None, shots=None, workflow_id=None, comments="", input_data=[]
+        self, *, backend=None, shots=None, workflow_id=None, input_data=InputData(), comments=""
     ):
         if not self._verify_user_is_authenticated():
             return
@@ -213,19 +214,15 @@ In case the service has been recently started please wait 5 minutes for it to be
         try:
             input_data_labels = []
             input_data_items = []
-            if type(input_data) == list:
-                for input_data_item in input_data:
-                    input_data_labels.append(input_data_item.data_type)
-                    input_data_items.append(input_data_item.data_string)
-            else:
-                input_data_labels.append(input_data.data_type)
-                input_data_items.append(input_data.data_string)
+            for input_data_label in input_data.data.keys():
+                input_data_labels.append(input_data_label)
+                input_data_items.append(input_data.data[input_data_label])
             job_data = {
                 "BackendName": backend,
                 "WorkflowId": workflow_id,
                 "Shots": shots,
                 "Comments": comments,
-                "InputDataTypes": input_data_labels,
+                "InputDataLabels": input_data_labels,
                 "InputDataItems": input_data_items,
             }
             (status_code, result) = self._make_post_request(
