@@ -7,7 +7,7 @@ import uuid
 import webbrowser
 
 from keycloak import KeycloakOpenID
-from qiskit.qpy import dump
+from qiskit import qpy
 from qiskit import QuantumCircuit
 from urllib.parse import urlencode
 
@@ -36,43 +36,35 @@ class InputData:
             self.add_data(label, content)
 
     def add_data(self, label, content):
-        self.check_label(label, content)
-        if label in ("pub", "pubs"):
-            content = self.format_pubs(label, content)
-        if type(content) == dict or type(content) == list or type(content) == tuple:
-            self.data[label] = json.dumps(content, indent=4)
-        elif type(content) == str:
-            self.data[label] = content
-        else:
-            raise Exception("Input data content must be either a dictionary, or a list/tuple of JSON serializable objects, or a string.")
+        self.check_label(label, self.data)
+        try:
+            if label == "pub":
+                content = self.validate_and_serialize_pub(content)
+                if not "pubs" in self.data.keys(): self.data["pubs"] = []
+                self.data["pubs"].append(json.dumps(content, indent=4))
+            else:
+                self.data[label] = json.dumps(content, indent=4)
+        except (OverflowError, TypeError, ValueError):
+            raise Exception("Input data content must be JSON serializable.")
 
-    def check_label(self, label, content):
+    def check_label(self, label, data):
         if type(label) != str:
             raise Exception("Input data label must be string.")
-        if not label in ["pub", "pubs", "molecule-info"]:
-            raise Exception("Only 'pub', 'pubs' or 'molecule-info' can be specified as a input data labels.")
-        if label == "pub" and type(content) != tuple and type(content) != QuantumCircuit:
-            raise Exception("For a PUB label the content of data can be a QuantumCircuit or a tuple containing a quantum circuit, optionally second a list of circuit parameters and optionally third a number of shots.")
-
-    def format_pubs(self, label, content):
-        if label == "pub":
-            return self.serialize_pub(content)
-        if label == "pubs":
-            content_list = []
-            for pub in content:
-                content_list.append(self.serialize_pub(pub))
-            return content_list
+        if label not in ["ising-model", "lattice", "molecule-info", "operator", "pub", "qubo-model", "vectors-data"]:
+            raise Exception(f"Input data of type {label} is not supported. Please choose one of the following options: 'ising-model', 'lattice', 'molecule-info', 'operator', 'pub', 'qubo-model', 'data-vectors'.")
+        if label != "pub" and label in data.keys():
+            raise Exception(f"An input data item of type '{label}' has already been added to the job input data. Multiple data items of same category are allowed only for PUBs.")
 
     def serialize_circuit(self, qc):
         buffer = io.BytesIO()
-        dump([qc], buffer)
+        qpy.dump(qc, buffer)
         qpy_binary_data = buffer.getvalue()
         base64_encoded_circuit = base64.b64encode(qpy_binary_data).decode("utf-8")
         return base64_encoded_circuit
 
-    def serialize_pub(self, pub):
-        paramaters = None
+    def validate_and_serialize_pub(self, pub):
         shots = None
+        paramaters = None
         if type(pub) == QuantumCircuit:
             quantum_circuit = pub
         elif type(pub) != tuple:
@@ -86,9 +78,16 @@ class InputData:
         else:
             raise Exception("A pub can be a tuple with at most 3 elements: a quantum circuit, a list of circuit paramaters and a number of shots.")
         if shots is not None and type(shots) != int:
-            raise Exception("The 'shots' in a PUB must be an integer and be positioned as the third element of a tuple specifying a PUB.")
+            raise Exception("The 'shots' setting in a PUB must be an integer and be positioned as the third element of a tuple specifying a PUB.")
         if paramaters is not None and type(paramaters) != list:
-            raise Exception("The 'paramaters' in a PUB must be a list of floating point numbers and be positioned as the second element of a tuple specifying a PUB.")
+            raise Exception("The 'paramaters' in a PUB must be a list of numbers and be positioned as the second element of a tuple specifying a PUB.")
+        if quantum_circuit.num_parameters == 0 and (paramaters is not None and len(paramaters) != 0):
+            raise Exception("A circuit with zero parameters must have 'paramaters' argument 'None' or an empty list.")
+        elif paramaters is not None and quantum_circuit.num_parameters != len(paramaters):
+            raise Exception(f"The number of paramaters for a quantum circuit {quantum_circuit.num_parameters} is different from the length {len(paramaters)} of the list of aruguments.")
+        if paramaters is not None and not all(isinstance(item, (int, float)) for item in paramaters):
+            raise Exception("The 'paramaters' setting in a PUB must be a list of numbers.")
+
         return (self.serialize_circuit(quantum_circuit), paramaters, shots)
 
 class StrafulProvider:
@@ -154,6 +153,8 @@ In case the service has been recently started please wait 5 minutes for it to be
                 print("More details: ", ex.message)
         except Exception as ex:
             print("Failed to authenticate with the quantum provider.")
+            if "Connection refused" in str(ex):
+                print("The remote service does not respond. Please try again later.")
             if self._debug:
                 print("Unexpected exception: ", ex)
 
@@ -214,6 +215,10 @@ In case the service has been recently started please wait 5 minutes for it to be
         try:
             input_data_labels = []
             input_data_items = []
+            input_data_labels.append("backend")
+            input_data_items.append(backend)
+            input_data_labels.append("shots")
+            input_data_items.append(str(shots))
             for input_data_label in input_data.data.keys():
                 input_data_labels.append(input_data_label)
                 input_data_items.append(input_data.data[input_data_label])
@@ -231,7 +236,8 @@ In case the service has been recently started please wait 5 minutes for it to be
             if status_code == 201:
                 return WorkflowJob(result["id"])
             else:
-                print(f"Workflow job submission has failed: {result.lower()}.")
+                # TODO: handle situations where the selected backend does not exist
+                print(f"Workflow job submission has failed: {result}.")
                 return WorkflowJob(None)
         except Exception as ex:
             print(str(ex))
@@ -314,7 +320,7 @@ In case the service has been recently started please wait 5 minutes for it to be
             or self._refresh_token_expiration_time is None
         ):
             print(
-                "You are not authorized to access this service. Please try to authenticate."
+                "You are not authorized to access this service. Please try to authenticate first."
             )
             return False
         if self.is_refresh_token_expired():
@@ -396,7 +402,7 @@ In case the service has been recently started please wait 5 minutes for it to be
                 )
             else:
                 raise AuthenticationFailure(
-                    "Cannot store state to initiate authentication, provider does not respond."
+                    "Cannot initiate authentication, the authentication provider does not respond."
                 )
         self._state = state
 
