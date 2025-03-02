@@ -11,9 +11,11 @@ from qiskit import qpy
 from qiskit import QuantumCircuit
 from urllib.parse import urlencode
 
+
 class AuthenticationFailure(Exception):
     def __init__(self, message):
         self.message = message
+
 
 class Job:
     def __init__(self, job_id):
@@ -22,12 +24,14 @@ class Job:
     def id(self):
         return self._job_id
 
+
 class WorkflowJob:
     def __init__(self, job_id):
         self._job_id = job_id
 
     def id(self):
         return self._job_id
+
 
 class InputData:
     def __init__(self, label=None, content=None):
@@ -40,20 +44,33 @@ class InputData:
         try:
             if label == "pub":
                 content = self.validate_and_serialize_pub(content)
-                if not "pubs" in self.data.keys(): self.data["pubs"] = []
-                self.data["pubs"].append(json.dumps(content, indent=4))
+                if not "pubs" in self.data.keys():
+                    self.data["pubs"] = []
+                self.data["pubs"].append(content)
             else:
-                self.data[label] = json.dumps(content, indent=4)
+                self.data[label] = content
         except (OverflowError, TypeError, ValueError):
             raise Exception("Input data content must be JSON serializable.")
 
     def check_label(self, label, data):
         if type(label) != str:
             raise Exception("Input data label must be string.")
-        if label not in ["ising-model", "lattice", "molecule-info", "operator", "pub", "qubo-model", "vectors-data"]:
-            raise Exception(f"Input data of type {label} is not supported. Please choose one of the following options: 'ising-model', 'lattice', 'molecule-info', 'operator', 'pub', 'qubo-model', 'data-vectors'.")
+        if label not in [
+            "ising-model",
+            "lattice",
+            "molecule-info",
+            "operator",
+            "pub",
+            "qubo-model",
+            "vectors-data",
+        ]:
+            raise Exception(
+                f"Input data of type {label} is not supported. Please choose one of the following options: 'ising-model', 'lattice', 'molecule-info', 'operator', 'pub', 'qubo-model', 'data-vectors'."
+            )
         if label != "pub" and label in data.keys():
-            raise Exception(f"An input data item of type '{label}' has already been added to the job input data. Multiple data items of same category are allowed only for PUBs.")
+            raise Exception(
+                f"An input data item of type '{label}' has already been added to the job input data. Multiple data items of same category are allowed only for PUBs."
+            )
 
     def serialize_circuit(self, qc):
         buffer = io.BytesIO()
@@ -68,7 +85,9 @@ class InputData:
         if type(pub) == QuantumCircuit:
             quantum_circuit = pub
         elif type(pub) != tuple:
-            raise Exception("A pub can be either a quantum circuit or a tuple containing a quantum circuit, optionally second a list of circuit parameters and optionally third a number of shots.")
+            raise Exception(
+                "A pub can be either a quantum circuit or a tuple containing a quantum circuit, optionally second a list of circuit parameters and optionally third a number of shots."
+            )
         elif len(pub) == 3:
             quantum_circuit, paramaters, shots = pub
         elif len(pub) == 2:
@@ -76,19 +95,38 @@ class InputData:
         elif len(pub) == 1:
             quantum_circuit = pub[0]
         else:
-            raise Exception("A pub can be a tuple with at most 3 elements: a quantum circuit, a list of circuit paramaters and a number of shots.")
+            raise Exception(
+                "A pub can be a tuple with at most 3 elements: a quantum circuit, a list of circuit paramaters and a number of shots."
+            )
         if shots is not None and type(shots) != int:
-            raise Exception("The 'shots' setting in a PUB must be an integer and be positioned as the third element of a tuple specifying a PUB.")
+            raise Exception(
+                "The 'shots' setting in a PUB must be an integer and be positioned as the third element of a tuple specifying a PUB."
+            )
         if paramaters is not None and type(paramaters) != list:
-            raise Exception("The 'paramaters' in a PUB must be a list of numbers and be positioned as the second element of a tuple specifying a PUB.")
-        if quantum_circuit.num_parameters == 0 and (paramaters is not None and len(paramaters) != 0):
-            raise Exception("A circuit with zero parameters must have 'paramaters' argument 'None' or an empty list.")
-        elif paramaters is not None and quantum_circuit.num_parameters != len(paramaters):
-            raise Exception(f"The number of paramaters for a quantum circuit {quantum_circuit.num_parameters} is different from the length {len(paramaters)} of the list of aruguments.")
-        if paramaters is not None and not all(isinstance(item, (int, float)) for item in paramaters):
-            raise Exception("The 'paramaters' setting in a PUB must be a list of numbers.")
+            raise Exception(
+                "The 'paramaters' in a PUB must be a list of numbers and be positioned as the second element of a tuple specifying a PUB."
+            )
+        if quantum_circuit.num_parameters == 0 and (
+            paramaters is not None and len(paramaters) != 0
+        ):
+            raise Exception(
+                "A circuit with zero parameters must have 'paramaters' argument 'None' or an empty list."
+            )
+        elif paramaters is not None and quantum_circuit.num_parameters != len(
+            paramaters
+        ):
+            raise Exception(
+                f"The number of paramaters for a quantum circuit {quantum_circuit.num_parameters} is different from the length {len(paramaters)} of the list of aruguments."
+            )
+        if paramaters is not None and not all(
+            isinstance(item, (int, float)) for item in paramaters
+        ):
+            raise Exception(
+                "The 'paramaters' setting in a PUB must be a list of numbers."
+            )
 
         return (self.serialize_circuit(quantum_circuit), paramaters, shots)
+
 
 class StrafulProvider:
 
@@ -165,7 +203,7 @@ In case the service has been recently started please wait 5 minutes for it to be
             print("Please specify the backend name.")
             return
         if not circuit:
-            print("The circuit cannot be empty.")
+            print("The quantum circuit is missing.")
             return
         if shots is None:
             print("Please specify the number of shots.")
@@ -176,7 +214,7 @@ In case the service has been recently started please wait 5 minutes for it to be
         try:
             job_data = {
                 "BackendName": backend,
-                "CircuitData": circuit,
+                "Circuit": self.serialize_circuit(circuit),
                 "Shots": shots,
                 "Comments": comments,
             }
@@ -187,14 +225,20 @@ In case the service has been recently started please wait 5 minutes for it to be
                 return Job(result["id"])
             else:
                 print(
-                    f"Job submission has failed with http status code: {status_code}."
+                    f"Job submission has failed with http status code: {status_code}. \nRemote server response: '{result}'"
                 )
                 return Job(None)
         except Exception as ex:
             print(str(ex))
 
     def submit_workflow_job(
-        self, *, backend=None, shots=None, workflow_id=None, input_data=InputData(), comments=""
+        self,
+        *,
+        backend=None,
+        shots=None,
+        workflow_id=None,
+        input_data=InputData(),
+        comments="",
     ):
         if not self._verify_user_is_authenticated():
             return
@@ -221,7 +265,8 @@ In case the service has been recently started please wait 5 minutes for it to be
             input_data_items.append(str(shots))
             for input_data_label in input_data.data.keys():
                 input_data_labels.append(input_data_label)
-                input_data_items.append(input_data.data[input_data_label])
+                content = input_data.data[input_data_label]
+                input_data_items.append(json.dumps(content, indent=4))
             job_data = {
                 "BackendName": backend,
                 "WorkflowId": workflow_id,
@@ -236,8 +281,9 @@ In case the service has been recently started please wait 5 minutes for it to be
             if status_code == 201:
                 return WorkflowJob(result["id"])
             else:
-                # TODO: handle situations where the selected backend does not exist
-                print(f"Workflow job submission has failed: {result}.")
+                print(
+                    f"Workflow job submission has failed with http status code: {status_code}. \nRemote server response: '{result}'"
+                )
                 return WorkflowJob(None)
         except Exception as ex:
             print(str(ex))
@@ -348,9 +394,9 @@ In case the service has been recently started please wait 5 minutes for it to be
         )
         try:
             json = response.json()
+            return (response.status_code, json)
         except:
-            json = "{}"
-        return (response.status_code, json)
+            return (response.status_code, response.text)
 
     def is_token_expired(self):
         if self._token_expiration_time is None:
