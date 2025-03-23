@@ -9,7 +9,17 @@ import webbrowser
 from keycloak import KeycloakOpenID
 from qiskit import qpy
 from qiskit import QuantumCircuit
+from qiskit.quantum_info import Operator, Pauli, PauliList, SparsePauliOp
+from qiskit.quantum_info.operators.linear_op import LinearOp
 from urllib.parse import urlencode
+
+
+def serialize_object(object):
+    buffer = io.BytesIO()
+    qpy.dump(object, buffer)
+    qpy_binary_data = buffer.getvalue()
+    base64_encoded_object = base64.b64encode(qpy_binary_data).decode("utf-8")
+    return base64_encoded_object
 
 
 class AuthenticationFailure(Exception):
@@ -42,7 +52,9 @@ class InputData:
     def add_data(self, label, content):
         self.check_label(label, self.data)
         try:
-            if label == "pub":
+            if label == "operator":
+                content = self.validate_and_serialize_operator(content)
+            elif label == "pub":
                 content = self.validate_and_serialize_pub(content)
                 if not "pubs" in self.data.keys():
                     self.data["pubs"] = []
@@ -56,6 +68,7 @@ class InputData:
         if type(label) != str:
             raise Exception("Input data label must be string.")
         if label not in [
+            "ansatz-parameters",
             "ising-model",
             "lattice",
             "molecule-info",
@@ -71,13 +84,6 @@ class InputData:
             raise Exception(
                 f"An input data item of type '{label}' has already been added to the job input data. Multiple data items of same category are allowed only for PUBs."
             )
-
-    def serialize_circuit(self, qc):
-        buffer = io.BytesIO()
-        qpy.dump(qc, buffer)
-        qpy_binary_data = buffer.getvalue()
-        base64_encoded_circuit = base64.b64encode(qpy_binary_data).decode("utf-8")
-        return base64_encoded_circuit
 
     def validate_and_serialize_pub(self, pub):
         shots = None
@@ -125,7 +131,21 @@ class InputData:
                 "The 'paramaters' setting in a PUB must be a list of numbers."
             )
 
-        return (self.serialize_circuit(quantum_circuit), paramaters, shots)
+        return (serialize_object(quantum_circuit), paramaters, shots)
+
+
+def validate_and_serialize_operator(self, operator):
+    if (
+        not isinstance(operator, Operator)
+        and not isinstance(operator, Pauli)
+        and not isinstance(operator, PauliList)
+        and not isinstance(operator, SparsePauliOp)
+        and not isinstance(operator, LinearOp)
+    ):
+        raise Exception(
+            "The operator must be an instance of the Operator, Pauli, PauliList or SparsePauliOp class."
+        )
+    return self.serialize_object(operator)
 
 
 class StrafulProvider:
@@ -214,7 +234,7 @@ In case the service has been recently started please wait 5 minutes for it to be
         try:
             job_data = {
                 "BackendName": backend,
-                "Circuit": self.serialize_circuit(circuit),
+                "Circuit": serialize_object(circuit),
                 "Shots": shots,
                 "Comments": comments,
             }
