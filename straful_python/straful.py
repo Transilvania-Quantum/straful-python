@@ -21,11 +21,9 @@ def serialize_object(object):
     base64_encoded_object = base64.b64encode(qpy_binary_data).decode("utf-8")
     return base64_encoded_object
 
-
 class AuthenticationFailure(Exception):
     def __init__(self, message):
         self.message = message
-
 
 class Job:
     def __init__(self, job_id):
@@ -34,14 +32,12 @@ class Job:
     def id(self):
         return self._job_id
 
-
 class WorkflowJob:
     def __init__(self, job_id):
         self._job_id = job_id
 
     def id(self):
         return self._job_id
-
 
 class InputData:
     def __init__(self, label=None, content=None):
@@ -54,6 +50,7 @@ class InputData:
         try:
             if label == "operator":
                 content = self.validate_and_serialize_operator(content)
+                self.data["operator"] = content
             elif label == "pub":
                 content = self.validate_and_serialize_pub(content)
                 if not "pubs" in self.data.keys():
@@ -133,7 +130,6 @@ class InputData:
 
         return (serialize_object(quantum_circuit), paramaters, shots)
 
-
 def validate_and_serialize_operator(self, operator):
     if (
         not isinstance(operator, Operator)
@@ -146,7 +142,6 @@ def validate_and_serialize_operator(self, operator):
             "The operator must be an instance of the Operator, Pauli, PauliList or SparsePauliOp class."
         )
     return self.serialize_object(operator)
-
 
 class StrafulProvider:
 
