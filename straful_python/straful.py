@@ -1,6 +1,7 @@
 import base64
 import io
 import json
+import numpy as np
 import requests
 import time
 import uuid
@@ -14,6 +15,10 @@ from qiskit.quantum_info.operators.linear_op import LinearOp
 from urllib.parse import urlencode
 
 
+def all_numbers(lst):
+    return all(isinstance(x, (int, float, complex)) for x in lst)
+
+
 def serialize_object(object):
     buffer = io.BytesIO()
     qpy.dump(object, buffer)
@@ -21,9 +26,11 @@ def serialize_object(object):
     base64_encoded_object = base64.b64encode(qpy_binary_data).decode("utf-8")
     return base64_encoded_object
 
+
 class AuthenticationFailure(Exception):
     def __init__(self, message):
         self.message = message
+
 
 class Job:
     def __init__(self, job_id):
@@ -32,12 +39,14 @@ class Job:
     def id(self):
         return self._job_id
 
+
 class WorkflowJob:
     def __init__(self, job_id):
         self._job_id = job_id
 
     def id(self):
         return self._job_id
+
 
 class InputData:
     def __init__(self, label=None, content=None):
@@ -130,18 +139,46 @@ class InputData:
 
         return (serialize_object(quantum_circuit), paramaters, shots)
 
+
 def validate_and_serialize_operator(self, operator):
     if (
         not isinstance(operator, Operator)
         and not isinstance(operator, Pauli)
-        and not isinstance(operator, PauliList)
         and not isinstance(operator, SparsePauliOp)
-        and not isinstance(operator, LinearOp)
+        and not (
+            isinstance(operator, tuple)
+            and isinstance(operator[0], PauliList)
+            and isinstance(operator[1], list)
+            and (operator[1] and not all_numbers(operator[1]))
+        )
     ):
         raise Exception(
-            "The operator must be an instance of the Operator, Pauli, PauliList or SparsePauliOp class."
+            "The operator must be an instance of the Operator, Pauli, SparsePauliOp class or a tuple containing a PauliList and a possible empty list of numeric coefficents."
         )
+
+    if isinstance(operator, Operator):
+        matrix = operator.data
+        if not np.allclose(matrix, matrix.conj().T):
+            print("WARNING: The operator you supplied is not Hermitian!")
+
+    if (
+        isinstance(operator, tuple)
+        and isinstance(operator[0], PauliList)
+        and isinstance(operator[1], list)
+    ):
+        pauli_list = operator[0]
+        coefficients = operator[1]
+        if (
+            coefficients is not None
+            and len(coefficients) > 0
+            and len(pauli_list) != len(coefficients)
+        ):
+            raise Exception(
+                "The number of Pauli terms in the Pauli list must match the number of coefficients or list of coefficients must be empty."
+            )
+
     return self.serialize_object(operator)
+
 
 class StrafulProvider:
 
