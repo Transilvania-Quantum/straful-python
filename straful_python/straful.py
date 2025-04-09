@@ -15,16 +15,23 @@ from qiskit.quantum_info.operators.linear_op import LinearOp
 from urllib.parse import urlencode
 
 
+class ComplexEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, complex):
+            return {"real": obj.real, "imag": obj.imag}
+        return super().default(obj)
+
+
 def all_numbers(lst):
     return all(isinstance(x, (int, float, complex)) for x in lst)
 
 
-def serialize_object(object):
+def serialize_circuit(circuit):
     buffer = io.BytesIO()
-    qpy.dump(object, buffer)
+    qpy.dump(circuit, buffer)
     qpy_binary_data = buffer.getvalue()
-    base64_encoded_object = base64.b64encode(qpy_binary_data).decode("utf-8")
-    return base64_encoded_object
+    base64_encoded_circuit = base64.b64encode(qpy_binary_data).decode("utf-8")
+    return base64_encoded_circuit
 
 
 class AuthenticationFailure(Exception):
@@ -54,12 +61,27 @@ class InputData:
         if label:
             self.add_data(label, content)
 
+    def __str__(self):
+        return json.dumps(self.data, indent=4, cls=ComplexEncoder)
+
     def add_data(self, label, content):
         self.check_label(label, self.data)
         try:
             if label == "operator":
-                content = self.validate_and_serialize_operator(content)
-                self.data["operator"] = content
+                operator = content
+                coeffs = None
+                if type(content) == tuple:
+                    operator, coeffs = content
+                sparse_pauli_operator = self.to_sparse_pauli_operator(
+                    operator, coeffs=coeffs
+                )
+                pauli_terms, coefficients = self.serialize_sparse_pauli_operator(
+                    sparse_pauli_operator
+                )
+                self.data["operator"] = {
+                    "pauli-terms": pauli_terms,
+                    "coefficients": coefficients,
+                }
             elif label == "pub":
                 content = self.validate_and_serialize_pub(content)
                 if not "pubs" in self.data.keys():
@@ -137,7 +159,7 @@ class InputData:
                 "The 'paramaters' setting in a PUB must be a list of numbers."
             )
 
-        return (serialize_object(quantum_circuit), paramaters, shots)
+        return (serialize_circuit(quantum_circuit), paramaters, shots)
 
     def validate_and_serialize_operator(self, operator):
         if (
@@ -176,7 +198,40 @@ class InputData:
                     "The number of Pauli terms in the Pauli list must match the number of coefficients or list of coefficients must be empty."
                 )
 
-        return serialize_object(operator)
+        return serialize_circuit(operator)
+
+    def to_sparse_pauli_operator(self, operator, coeffs=None):
+        if isinstance(operator, SparsePauliOp):
+            return operator
+
+        elif isinstance(operator, Pauli):
+            return SparsePauliOp(operator)
+
+        elif isinstance(operator, PauliList):
+            if coeffs is not None and len(coeffs) > 0 and len(coeffs) != len(operator):
+                raise ValueError(
+                    "Number of coefficients must match number of Pauli operators in PauliList"
+                )
+
+            coefficients = (
+                coeffs
+                if (coeffs is not None and len(coeffs) > 0)
+                else [1.0] * len(operator)
+            )
+            pauli_strings = [str(pauli) for pauli in operator]
+            return SparsePauliOp(pauli_strings, coeffs=coefficients)
+
+        elif isinstance(operator, Operator):
+            return SparsePauliOp.from_operator(operator)
+
+    def serialize_sparse_pauli_operator(self, sparse_op):
+        if not isinstance(sparse_op, SparsePauliOp):
+            raise ValueError("Input must be a SparsePauliOp")
+
+        pauli_data = sparse_op.to_list()
+        pauli_terms = [term[0] for term in pauli_data]
+        coefficients = [term[1] for term in pauli_data]
+        return pauli_terms, coefficients
 
 
 class StrafulProvider:
@@ -247,14 +302,36 @@ In case the service has been recently started please wait 5 minutes for it to be
             if self._debug:
                 print("Unexpected exception: ", ex)
 
-    def submit_job(self, *, backend=None, circuit=None, shots=None, comments=""):
+    def submit_job(
+        self, *, backend=None, circuit=None, circuits=None, shots=None, comments=""
+    ):
         if not self._verify_user_is_authenticated():
             return
         if not backend:
             print("Please specify the backend name.")
             return
-        if not circuit:
-            print("The quantum circuit is missing.")
+        if circuit is None and circuits is None:
+            print(
+                "An quantum circuit to be executed or a list of quantum circuits to be executed must be specified."
+            )
+            return
+        if circuit is not None and circuits is not None:
+            print(
+                "You can use either 'circuit' or 'circuits' as input arguments but not both at the same time."
+            )
+            return
+        if circuit is not None and not isinstance(circuit, QuantumCircuit):
+            print(
+                "The 'circuit' argument must be an instance of QuantumCircuit or deriving from it."
+            )
+            return
+        if circuits is not None and (
+            not isinstance(circuits, list)
+            or not all(isinstance(circ, QuantumCircuit) for circ in circuits)
+        ):
+            print(
+                "The 'circuits' argument must be a list of QuantumCircuit instances or objects deriving from QuantumCircuit."
+            )
             return
         if shots is None:
             print("Please specify the number of shots.")
@@ -263,17 +340,35 @@ In case the service has been recently started please wait 5 minutes for it to be
             print("The number of shots must be specified as an integer number.")
             return
         try:
-            job_data = {
-                "BackendName": backend,
-                "Circuit": serialize_object(circuit),
-                "Shots": shots,
-                "Comments": comments,
-            }
+            if circuit is not None:
+                job_data = {
+                    "BackendName": backend,
+                    "Circuit": serialize_circuit(circuit),
+                    "Circuits": [],
+                    "Shots": shots,
+                    "Comments": comments,
+                }
+            elif circuits is not None:
+                job_data = {
+                    "BackendName": backend,
+                    "Circuit": None,
+                    "Circuits": [serialize_circuit(circuit) for circuit in circuits],
+                    "Shots": shots,
+                    "Comments": comments,
+                }
             (status_code, result) = self._make_post_request(
                 f"{self._asp_net_url}/api/job", job_data
             )
             if status_code == 201:
                 return Job(result["id"])
+            elif status_code == 401:
+                print(
+                    "You are not authorized to access this service. Please try to authenticate first."
+                )
+            elif "Under Maintenance" in result:
+                print(
+                    "The remote service is currently under maintenance. Please try again later."
+                )
             else:
                 print(
                     f"Job submission has failed with http status code: {status_code}. \nRemote server response: '{result}'"
@@ -317,7 +412,9 @@ In case the service has been recently started please wait 5 minutes for it to be
             for input_data_label in input_data.data.keys():
                 input_data_labels.append(input_data_label)
                 content = input_data.data[input_data_label]
-                input_data_items.append(json.dumps(content, indent=4))
+                input_data_items.append(
+                    json.dumps(content, indent=4, cls=ComplexEncoder)
+                )
             job_data = {
                 "BackendName": backend,
                 "WorkflowId": workflow_id,
@@ -331,6 +428,10 @@ In case the service has been recently started please wait 5 minutes for it to be
             )
             if status_code == 201:
                 return WorkflowJob(result["id"])
+            elif status_code == 401:
+                print(
+                    "You are not authorized to access this service. Please try to authenticate first."
+                )
             else:
                 print(
                     f"Workflow job submission has failed with http status code: {status_code}. \nRemote server response: '{result}'"
