@@ -39,6 +39,11 @@ class AuthenticationFailure(Exception):
         self.message = message
 
 
+class AuthorizationFailure(Exception):
+    def __init__(self, message):
+        self.message = message
+
+
 class Job:
     def __init__(self, job_id):
         self._job_id = job_id
@@ -69,6 +74,7 @@ class InputData:
         try:
             if label == "operator":
                 operator = content
+                self.validate_operator(operator)
                 coeffs = None
                 if type(content) == tuple:
                     operator, coeffs = content
@@ -81,12 +87,16 @@ class InputData:
                 self.data["operator"] = {
                     "pauli-terms": pauli_terms,
                     "coefficients": coefficients,
+                    "operator-string-representation": str(operator),
                 }
             elif label == "pub":
                 content = self.validate_and_serialize_pub(content)
                 if not "pubs" in self.data.keys():
                     self.data["pubs"] = []
                 self.data["pubs"].append(content)
+            elif label == "molecule-info`":
+                self.validate_molecule_info(content)
+                self.data[label] = content
             else:
                 self.data[label] = content
         except (OverflowError, TypeError, ValueError):
@@ -111,6 +121,32 @@ class InputData:
         if label != "pub" and label in data.keys():
             raise Exception(
                 f"An input data item of type '{label}' has already been added to the job input data. Multiple data items of same category are allowed only for PUBs."
+            )
+
+    def validate_molecule_info(self, molecule_info):
+        if not isinstance(molecule_info["symbols"], list):
+            raise Exception("The 'symbols' must be a list of nuclei.")
+        if not isinstance(molecule_info["coords"], list):
+            raise Exception(
+                "The 'coords' must be a list of tuples representing the x, y, z position of each nuclei."
+            )
+        if "mutiplicity" in molecule_info and not isinstance(
+            molecule_info["mutiplicity"], int
+        ):
+            raise Exception("The 'multiplicity' must be an integer.")
+        if "charge" in molecule_info and not isinstance(molecule_info["charge"], int):
+            raise Exception("The 'charge' must be an integer.")
+        if (
+            "units" in molecule_info
+            and molecule_info["units"].lower() != "angstrom"
+            and molecule_info["units"].lower() != "bohr"
+        ):
+            raise Exception("The 'units' must be either 'Angstrom' or 'Bohr'.")
+        if "masses" in molecule_info and not all(
+            isinstance(m, (int, float)) for m in molecule_info["masses"]
+        ):
+            raise Exception(
+                "The 'masses' must be a list of floats, one for each nucleus in the molecule."
             )
 
     def validate_and_serialize_pub(self, pub):
@@ -161,7 +197,7 @@ class InputData:
 
         return (serialize_circuit(quantum_circuit), paramaters, shots)
 
-    def validate_and_serialize_operator(self, operator):
+    def validate_operator(self, operator):
         if (
             not isinstance(operator, Operator)
             and not isinstance(operator, Pauli)
@@ -197,8 +233,6 @@ class InputData:
                 raise Exception(
                     "The number of Pauli terms in the Pauli list must match the number of coefficients or list of coefficients must be empty."
                 )
-
-        return serialize_circuit(operator)
 
     def to_sparse_pauli_operator(self, operator, coeffs=None):
         if isinstance(operator, SparsePauliOp):
@@ -292,7 +326,11 @@ In case the service has been recently started please wait 5 minutes for it to be
                 time.time() + token_response["refresh_expires_in"] - 5
             )  # seconds
         except AuthenticationFailure as ex:
-            print("Failed to authenticate with the quantum provider.")
+            print(ex.message)
+        except AuthorizationFailure as ex:
+            print(
+                "Failed to authenticate with the quantum provider. Make sure you are using the correct email account."
+            )
             if self._debug:
                 print("More details: ", ex.message)
         except Exception as ex:
@@ -585,18 +623,30 @@ In case the service has been recently started please wait 5 minutes for it to be
         except requests.exceptions.RequestException as e:
             return False
 
+    def _is_server_under_maintenance(self, url):
+        try:
+            response = requests.get(url, verify=self._use_https)
+            if "Under Maintenance" in response.text:
+                return True
+            return False
+        except requests.exceptions.RequestException as e:
+            return False
+
     def _store_state(self):
         state = str(uuid.uuid4())
-        session = requests.Session()
-        session_response = session.get(
+        response = requests.post(
             f"{self._asp_net_url}/auth/storestate",
-            params={"state": state},
+            json={"state": state},
             verify=self._use_https,
         )
-        if session_response.status_code != 200:
+        if response.status_code != 200:
             if not self._is_server_online(self._asp_net_url):
                 raise AuthenticationFailure(
-                    f"The service you are trying to access at: {self._asp_net_url} is not responding."
+                    f"The service you are trying to access at: {self._asp_net_url} is not online."
+                )
+            elif self._is_server_under_maintenance(self._asp_net_url):
+                raise AuthenticationFailure(
+                    f"The service you are trying to access at: {self._asp_net_url} is under maintenance."
                 )
             else:
                 raise AuthenticationFailure(
@@ -636,9 +686,10 @@ In case the service has been recently started please wait 5 minutes for it to be
                     params={"state": self._state},
                     verify=self._use_https,
                 )
+                # TODO: what if I use a wrong email account
                 if response.status_code == 400:
                     if response.text == "Authorization state is missing.":
-                        raise AuthenticationFailure(
+                        raise AuthorizationFailure(
                             "Authorization state not found on remote server."
                         )
                     continue
@@ -646,11 +697,11 @@ In case the service has been recently started please wait 5 minutes for it to be
                 auth_code = data.split(": ")[1]
                 return auth_code
             except requests.RequestException as e:
-                raise AuthenticationFailure(
+                raise AuthorizationFailure(
                     f"Remote server is not responding to attempts to retrieve authorization code, exception is {e}."
                 )
 
-        raise AuthenticationFailure("Authorization code not received")
+        raise AuthorizationFailure("Authorization code not received.")
 
     def is_valid_uuid(self, value: str) -> bool:
         try:
