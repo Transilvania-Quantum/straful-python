@@ -3,6 +3,7 @@ import io
 import json
 import numpy as np
 import requests
+import secrets
 import time
 import uuid
 import webbrowser
@@ -633,7 +634,7 @@ In case the service has been recently started please wait 5 minutes for it to be
             return False
 
     def _store_state(self):
-        state = str(uuid.uuid4())
+        state = secrets.token_urlsafe(64)
         response = requests.post(
             f"{self._asp_net_url}/auth/storestate",
             json={"state": state},
