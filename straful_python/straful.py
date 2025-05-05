@@ -98,6 +98,9 @@ class InputData:
             elif label == "molecule-info`":
                 self.validate_molecule_info(content)
                 self.data[label] = content
+            elif label == "ising-model":
+                self.validate_ising_model(content)
+                self.data[label] = content
             else:
                 self.data[label] = content
         except (OverflowError, TypeError, ValueError):
@@ -110,14 +113,14 @@ class InputData:
             "ansatz-parameters",
             "ising-model",
             "lattice",
+            "lp-model",
             "molecule-info",
             "operator",
             "pub",
-            "qubo-model",
             "vectors-data",
         ]:
             raise Exception(
-                f"Input data of type {label} is not supported. Please choose one of the following options: 'ising-model', 'lattice', 'molecule-info', 'operator', 'pub', 'qubo-model', 'data-vectors'."
+                f"Input data of type {label} is not supported. Please choose one of the following options: 'ising-model', 'lattice', 'lp-model', 'molecule-info', 'operator', 'pub', 'data-vectors'."
             )
         if label != "pub" and label in data.keys():
             raise Exception(
@@ -149,6 +152,30 @@ class InputData:
             raise Exception(
                 "The 'masses' must be a list of floats, one for each nucleus in the molecule."
             )
+
+    def validate_ising_model(self, ising_model):
+        if not isinstance(ising_model, dict):
+            raise Exception("The 'ising-model' must be a dictionary.")
+        for key in ising_model.keys():
+            if key not in ["h", "J"]:
+                raise Exception(
+                    f"The 'ising-model' dictionary can only contain the following keys: 'h' and 'J'."
+                )
+        if "h" in ising_model and not all(
+            isinstance(h, (int, float)) for h in ising_model["h"]
+        ):
+            raise Exception("The 'h' must be a list of floats.")
+        if "J" in ising_model:
+            if not isinstance(ising_model["J"], dict):
+                raise Exception("The 'J' must be a dictionary with tuple keys.")
+            for key, value in ising_model["J"].items():
+                if not isinstance(key, tuple) or len(key) != 2:
+                    raise Exception("Each key in 'J' must be a tuple of two integers representing spin indices.")
+                if not all(isinstance(idx, int) for idx in key):
+                    raise Exception("Spin indices in 'J' must be integers.")
+                if not isinstance(value, (int, float)):
+                    raise Exception("Coupling coefficients in 'J' must be numeric values (int or float).")
+
 
     def validate_and_serialize_pub(self, pub):
         shots = None
