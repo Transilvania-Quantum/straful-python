@@ -155,27 +155,40 @@ class InputData:
 
     def validate_ising_model(self, ising_model):
         if not isinstance(ising_model, dict):
-            raise Exception("The 'ising-model' must be a dictionary.")
+            raise Exception("The 'ising_model' must be a dictionary.")
+
         for key in ising_model.keys():
             if key not in ["h", "J"]:
                 raise Exception(
-                    f"The 'ising-model' dictionary can only contain the following keys: 'h' and 'J'."
+                    "The 'ising_model' dictionary can only contain the keys: 'h' and 'J'."
                 )
-        if "h" in ising_model and not all(
-            isinstance(h, (int, float)) for h in ising_model["h"]
-        ):
-            raise Exception("The 'h' must be a list of floats.")
-        if "J" in ising_model:
-            if not isinstance(ising_model["J"], dict):
-                raise Exception("The 'J' must be a dictionary with tuple keys.")
-            for key, value in ising_model["J"].items():
-                if not isinstance(key, tuple) or len(key) != 2:
-                    raise Exception("Each key in 'J' must be a tuple of two integers representing spin indices.")
-                if not all(isinstance(idx, int) for idx in key):
-                    raise Exception("Spin indices in 'J' must be integers.")
-                if not isinstance(value, (int, float)):
-                    raise Exception("Coupling coefficients in 'J' must be numeric values (int or float).")
 
+        if "h" in ising_model:
+            if not isinstance(ising_model["h"], list):
+                raise Exception("The 'h' field must be a list of numeric values.")
+            if not all(isinstance(h, (int, float)) for h in ising_model["h"]):
+                raise Exception("Each element in 'h' must be an int or float.")
+
+        if "J" in ising_model:
+            if not isinstance(ising_model["J"], list):
+                raise Exception("The 'J' field must be a list of dictionaries.")
+            for interaction in ising_model["J"]:
+                if not isinstance(interaction, dict):
+                    raise Exception(
+                        "Each item in 'J' must be a dictionary with 'pair' and 'value' keys."
+                    )
+                if "pair" not in interaction or "value" not in interaction:
+                    raise Exception(
+                        "Each item in 'J' must contain 'pair' and 'value' keys."
+                    )
+                if (
+                    not isinstance(interaction["pair"], list)
+                    or len(interaction["pair"]) != 2
+                    or not all(isinstance(i, int) for i in interaction["pair"])
+                ):
+                    raise Exception("'pair' must be a list of two integers.")
+                if not isinstance(interaction["value"], (int, float)):
+                    raise Exception("'value' must be a numeric type (int or float).")
 
     def validate_and_serialize_pub(self, pub):
         shots = None
