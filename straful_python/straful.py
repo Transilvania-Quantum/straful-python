@@ -473,10 +473,8 @@ In case the service has been recently started please wait 5 minutes for it to be
         if not workflow_id:
             print("Please specify a workflow Id.")
             return
-        if shots is None:
-            shots = 1024
-        if not isinstance(shots, int):
-            print("The number of shots must be an integer.")
+        if shots is not None and not isinstance(shots, int):
+            print("The number of shots must be an integer or 'None'.")
             return
         if not self.is_valid_uuid(workflow_id):
             print("The specified workflow Id is not valid.")
@@ -497,7 +495,7 @@ In case the service has been recently started please wait 5 minutes for it to be
             job_data = {
                 "BackendName": backend,
                 "WorkflowId": workflow_id,
-                "Shots": shots,
+                "Shots": str(shots),
                 "Comments": comments,
                 "InputDataLabels": input_data_labels,
                 "InputDataItems": input_data_items,
