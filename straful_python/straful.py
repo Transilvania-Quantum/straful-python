@@ -13,13 +13,30 @@ from qiskit import qpy
 from qiskit import QuantumCircuit
 from qiskit.quantum_info import Operator, Pauli, PauliList, SparsePauliOp
 from qiskit.quantum_info.operators.linear_op import LinearOp
+from qiskit_nature.second_q.hamiltonians.lattices import (
+    KagomeLattice,
+    Lattice,
+    LineLattice,
+    HexagonalLattice,
+    HyperCubicLattice,
+    SquareLattice,
+    TriangularLattice,
+)
+from qiskit_nature.second_q.hamiltonians.lattices.boundary_condition import (
+    BoundaryCondition,
+)
 from urllib.parse import urlencode
 
 
-class ComplexEncoder(json.JSONEncoder):
+class CustomJSONEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, complex):
             return {"real": obj.real, "imag": obj.imag}
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        if isinstance(obj, BoundaryCondition):
+            # Convert enum to string
+            return str(obj)
         return super().default(obj)
 
 
@@ -68,7 +85,7 @@ class InputData:
             self.add_data(label, content)
 
     def __str__(self):
-        return json.dumps(self.data, indent=4, cls=ComplexEncoder)
+        return json.dumps(self.data, indent=2, cls=CustomJSONEncoder)
 
     def add_data(self, label, content):
         self.check_label(label, self.data)
@@ -95,9 +112,11 @@ class InputData:
                 if not "pubs" in self.data.keys():
                     self.data["pubs"] = []
                 self.data["pubs"].append(content)
-            elif label == "molecule-info`":
+            elif label == "molecule-info":
                 self.validate_molecule_info(content)
                 self.data[label] = content
+            elif label == "lattice":
+                self.data[label] = self.lattice_to_dict(content)
             elif label == "ising-model":
                 self.validate_ising_model(content)
                 self.data[label] = content
@@ -125,6 +144,71 @@ class InputData:
         if label != "pub" and label in data.keys():
             raise Exception(
                 f"An input data item of type '{label}' has already been added to the job input data. Multiple data items of same category are allowed only for PUBs."
+            )
+
+    def lattice_to_dict(self, lattice):
+        if isinstance(lattice, LineLattice):
+            lattice_data = {
+                "type": "LineLattice",
+                "num_nodes": lattice.num_nodes,
+                "boundary_condition": lattice.boundary_condition[0].name,
+                "edge_parameter": lattice.edge_parameter,
+                "onsite_parameter": lattice.onsite_parameter,
+            }
+            return lattice_data
+        elif isinstance(lattice, TriangularLattice):
+            lattice_data = {
+                "type": "TriangularLattice",
+                "rows": lattice.rows,
+                "cols": lattice.cols,
+                "boundary_condition": lattice.boundary_condition.name,
+                "edge_parameter": lattice.edge_parameter,
+                "onsite_parameter": lattice.onsite_parameter,
+            }
+            return lattice_data
+        elif isinstance(lattice, (SquareLattice, KagomeLattice, HyperCubicLattice)):
+            lattice_data = {
+                "type": type(lattice).__name__,
+                "rows": lattice.rows,
+                "cols": lattice.cols,
+                "boundary_condition": [
+                    bc.name
+                    for bc in (
+                        lattice.boundary_condition
+                        if isinstance(lattice.boundary_condition, tuple)
+                        else (lattice.boundary_condition,)
+                    )
+                ],
+                "edge_parameter": lattice.edge_parameter,
+                "onsite_parameter": lattice.onsite_parameter,
+            }
+            return lattice_data
+        elif isinstance(lattice, HexagonalLattice):
+            lattice_data = {
+                "type": "HexagonalLattice",
+                "rows": lattice._rows,
+                "cols": lattice._cols,
+                "edge_parameter": lattice.edge_parameter,
+                "onsite_parameter": lattice.onsite_parameter,
+            }
+            return lattice_data
+        elif isinstance(lattice, Lattice):
+            graph = lattice.graph
+            nodes = list(graph.node_indexes())
+            edges = [
+                {"source": edge[0], "target": edge[1], "weight": edge[2]}
+                for edge in graph.weighted_edge_list()
+            ]
+            lattice_data = {
+                "type": "Lattice",
+                "nodes": nodes,
+                "edges": edges,
+                "num_nodes": lattice.num_nodes,
+            }
+            return lattice_data
+        else:
+            raise Exception(
+                "This input lattice object is not supported. Please use an object of the following types: Lattice, LineLattice, TriangularLattice, SquareLattice, KagomeLattice, HyperCubicLattice or HexagonalLattice. All of them are available in the qiskit_nature library."
             )
 
     def validate_molecule_info(self, molecule_info):
@@ -490,12 +574,12 @@ In case the service has been recently started please wait 5 minutes for it to be
                 input_data_labels.append(input_data_label)
                 content = input_data.data[input_data_label]
                 input_data_items.append(
-                    json.dumps(content, indent=4, cls=ComplexEncoder)
+                    json.dumps(content, indent=2, cls=CustomJSONEncoder)
                 )
             job_data = {
                 "BackendName": backend,
                 "WorkflowId": workflow_id,
-                "Shots": str(shots),
+                "Shots": shots,
                 "Comments": comments,
                 "InputDataLabels": input_data_labels,
                 "InputDataItems": input_data_items,
