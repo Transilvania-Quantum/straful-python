@@ -137,10 +137,10 @@ class InputData:
             "molecule-info",
             "operator",
             "pub",
-            "train-data",
+            "training-data",
         ]:
             raise Exception(
-                f"Input data of type {label} is not supported. Please choose one of the following options: 'ansatz-parameters', 'inference-data' 'ising-model', 'lattice', 'lp-model', 'molecule-info', 'operator', 'pub', 'train-data'."
+                f"Input data of type {label} is not supported. Please choose one of the following options: 'ansatz-parameters', 'inference-data' 'ising-model', 'lattice', 'lp-model', 'molecule-info', 'operator', 'pub', 'training-data'."
             )
         if label != "pub" and label in data.keys():
             raise Exception(
