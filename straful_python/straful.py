@@ -130,16 +130,17 @@ class InputData:
             raise Exception("Input data label must be string.")
         if label not in [
             "ansatz-parameters",
+            "inference-data",
             "ising-model",
             "lattice",
             "lp-model",
             "molecule-info",
             "operator",
             "pub",
-            "vectors-data",
+            "train-data",
         ]:
             raise Exception(
-                f"Input data of type {label} is not supported. Please choose one of the following options: 'ising-model', 'lattice', 'lp-model', 'molecule-info', 'operator', 'pub', 'data-vectors'."
+                f"Input data of type {label} is not supported. Please choose one of the following options: 'ansatz-parameters', 'inference-data' 'ising-model', 'lattice', 'lp-model', 'molecule-info', 'operator', 'pub', 'train-data'."
             )
         if label != "pub" and label in data.keys():
             raise Exception(
