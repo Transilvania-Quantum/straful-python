@@ -120,6 +120,12 @@ class InputData:
             elif label == "ising-model":
                 self.validate_ising_model(content)
                 self.data[label] = content
+            elif label == "training-data":
+                self.validate_training_data(content)
+                self.data[label] = content
+            elif label == "inference-data":
+                self.validate_inference_data(content)
+                self.data[label] = content
             else:
                 self.data[label] = content
         except (OverflowError, TypeError, ValueError):
@@ -274,6 +280,69 @@ class InputData:
                     raise Exception("'pair' must be a list of two integers.")
                 if not isinstance(interaction["value"], (int, float)):
                     raise Exception("'value' must be a numeric type (int or float).")
+
+    def validate_training_data(self, training_data):
+        vector_size = None
+        if not isinstance(training_data, list):
+            raise Exception("The 'training_data' must be a list of dictionaries.")
+        for data in training_data:
+            if not isinstance(data, dict):
+                raise Exception("The 'training_data' must be a list of dictionaries.")
+            if not "data-point" in data:
+                raise Exception(
+                    "Each dictionary in the list 'training_data' must contain a 'data-point' key."
+                )
+            vector = data["data-point"]
+            if not isinstance(vector, list):
+                raise Exception(
+                    "The 'data-point' value must be a list of numeric values."
+                )
+            if not all(isinstance(item, (int, float)) for item in vector):
+                raise Exception(
+                    "The 'data-point' value must be a list of numeric values (int or float)."
+                )
+            if vector_size is None:
+                vector_size = len(vector)
+            if len(vector) != vector_size:
+                raise Exception(
+                    "All 'data-point' vectors in training data entries must have the same length."
+                )
+            if not "label" in data:
+                raise Exception(
+                    "Each dictionary in the list of training data points must contain a 'label' key."
+                )
+            label = data["label"]
+            if not isinstance(label, (int, float)):
+                raise Exception(
+                    "The 'label' value must be a numeric type (int or float)."
+                )
+
+    def validate_inference_data(self, inference_data):
+        vector_size = None
+        if not isinstance(inference_data, list):
+            raise Exception("The 'inference_data' must be a list of dictionaries.")
+        for data in inference_data:
+            if not isinstance(data, dict):
+                raise Exception("The 'inference_data' must be a list of dictionaries.")
+            if not "data-point" in data:
+                raise Exception(
+                    "Each dictionary in the list of inference data points must contain a 'data-point' key."
+                )
+            vector = data["data-point"]
+            if not isinstance(vector, list):
+                raise Exception(
+                    "The 'data-point' value must be a list of numeric values."
+                )
+            if not all(isinstance(item, (int, float)) for item in vector):
+                raise Exception(
+                    "The 'data-point' value must be a list of numeric values (int or float)."
+                )
+            if vector_size is None:
+                vector_size = len(vector)
+            if len(vector) != vector_size:
+                raise Exception(
+                    "All 'data-point' vectors in inference data entries must have the same length."
+                )
 
     def validate_and_serialize_pub(self, pub):
         shots = None
