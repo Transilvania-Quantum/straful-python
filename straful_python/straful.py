@@ -860,7 +860,7 @@ In case the service has been recently started please wait 5 minutes for it to be
 
     def _get_autehntication_code(self):
 
-        timeout_seconds = 300
+        timeout_seconds = 20
         start_time = time.time()
         delta_t = time.time() - start_time
 
@@ -894,7 +894,7 @@ In case the service has been recently started please wait 5 minutes for it to be
                     f"Remote server is not responding to attempts to retrieve authorization code, exception is {e}."
                 )
 
-        raise AuthorizationFailure("Authorization code not received.")
+        raise AuthorizationFailure("Authorization code not received. Try again later.")
 
     def is_valid_uuid(self, value: str) -> bool:
         try:
