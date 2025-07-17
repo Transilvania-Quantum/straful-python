@@ -465,7 +465,8 @@ class InputData:
 
 class StrafulProvider:
 
-    _asp_net_port = "5001"
+    _asp_net_port_dev = "5001"
+    _asp_net_port_prod = "443"
     _key_cloak_port = "8443"
     _client_id = "straful-client"
     _realm_name = "straful-realm"
@@ -479,7 +480,11 @@ class StrafulProvider:
         self._token_expiration_time = None
         self._refresh_token_expiration_time = None
         self._provider_url = url.rstrip("/")
-        self._asp_net_url = f"{self._provider_url}:{self._asp_net_port}"
+        self._asp_net_url = (
+            f"{self._provider_url}:{self._asp_net_port_dev}"
+            if self._debug
+            else f"{self._provider_url}:{self._asp_net_port_prod}"
+        )
         self._auth_call_back_url = f"{self._asp_net_url}/auth/callback"
         self._show_code_callback_url = f"{self._asp_net_url}/auth/showcode"
         self._keycloak_server_url = f"{self._provider_url}:{self._key_cloak_port}"
@@ -860,41 +865,19 @@ In case the service has been recently started please wait 5 minutes for it to be
 
     def _get_autehntication_code(self):
 
-        timeout_seconds = 20
-        start_time = time.time()
-        delta_t = time.time() - start_time
-
-        while delta_t < timeout_seconds:
-
-            if delta_t < 10:
-                time.sleep(1)
-            else:
-                time.sleep(3)
-
-            delta_t = time.time() - start_time
-
-            try:
-                response = requests.get(
-                    self._show_code_callback_url,
-                    params={"state": self._state},
-                    verify=self._use_https,
-                )
-                # TODO: what if I use a wrong email account
-                if response.status_code == 400:
-                    if response.text == "Authorization state is missing.":
-                        raise AuthorizationFailure(
-                            "Authorization state not found on remote server."
-                        )
-                    continue
-                data = response.text
-                auth_code = data.split(": ")[1]
-                return auth_code
-            except requests.RequestException as e:
-                raise AuthorizationFailure(
-                    f"Remote server is not responding to attempts to retrieve authorization code, exception is {e}."
-                )
-
-        raise AuthorizationFailure("Authorization code not received. Try again later.")
+        response = requests.get(
+            self._show_code_callback_url,
+            params={"state": self._state},
+            verify=self._use_https,
+        )
+        # TODO: what if I use a wrong email account
+        if response.status_code == 400:
+            raise AuthorizationFailure(
+                "Authorization code was not received. Please make sure you are using a Google account which you have signed-on our web-site. If our website is not online and please try again later."
+            )
+        data = response.text
+        auth_code = data.split(": ")[1]
+        return auth_code
 
     def is_valid_uuid(self, value: str) -> bool:
         try:
