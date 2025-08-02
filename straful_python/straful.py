@@ -467,11 +467,15 @@ class StrafulProvider:
 
     _asp_net_port_dev = "5001"
     _asp_net_port_prod = "443"
-    _key_cloak_port = "8443"
+    _keycloak_port = "8443"
     _client_id = "straful-client"
     _realm_name = "straful-realm"
+    _provider_url_dev = "https://localhost"
+    _provider_url_prod = "https://straful.transilvania-quantum.org"
+    _keycloak_url_dev = "https://localhost"
+    _keycloak_url_prod = "https://keycloak.transilvania-quantum.org"
 
-    def __init__(self, *, url, use_https=True, debug=False):
+    def __init__(self, use_https=True, debug=False):
         self._use_https = use_https
         self._debug = debug
         self._state = None
@@ -479,19 +483,22 @@ class StrafulProvider:
         self._refresh_token = None
         self._token_expiration_time = None
         self._refresh_token_expiration_time = None
-        self._provider_url = url.rstrip("/")
         self._asp_net_url = (
-            f"{self._provider_url}:{self._asp_net_port_dev}"
+            f"{self._provider_url_dev}:{self._asp_net_port_dev}"
             if self._debug
-            else f"{self._provider_url}:{self._asp_net_port_prod}"
+            else f"{self._provider_url_prod}:{self._asp_net_port_prod}"
         )
         self._auth_call_back_url = f"{self._asp_net_url}/auth/callback"
         self._show_code_callback_url = f"{self._asp_net_url}/auth/showcode"
-        self._keycloak_server_url = f"{self._provider_url}:{self._key_cloak_port}"
+        self._keycloak_server_url = (
+            f"{self._keycloak_url_dev}:{self._keycloak_port}"
+            if self._debug
+            else f"{self._keycloak_url_prod}:{self._keycloak_port}"
+        )
 
         if not self._is_server_online(self._keycloak_server_url):
             raise SystemExit(
-                f"The service you are trying to access at: {url}, is not responding. \
+                f"The service you are trying to access at: {self._asp_net_url}, is not responding. \
 In case the service has been recently started please wait 5 minutes for it to become fully functional."
             )
 
@@ -529,7 +536,7 @@ In case the service has been recently started please wait 5 minutes for it to be
             print(ex.message)
         except AuthorizationFailure as ex:
             print(
-                "Failed to authenticate with the quantum provider. Make sure you are using the correct email account."
+                "Failed to authenticate with the quantum provider. Make sure you are using the correct Gmail account."
             )
             if self._debug:
                 print("More details: ", ex.message)
@@ -601,7 +608,7 @@ In case the service has been recently started please wait 5 minutes for it to be
                 return Job(result["id"])
             elif status_code == 401:
                 print(
-                    "You are not authorized to access this service. Please try to authenticate first."
+                    "You are not authorized to access this service. Please try to authenticate first and make sure you have signed on on our web-site with a Google email account."
                 )
             elif "Under Maintenance" in result:
                 print(
@@ -666,7 +673,7 @@ In case the service has been recently started please wait 5 minutes for it to be
                 return WorkflowJob(result["id"])
             elif status_code == 401:
                 print(
-                    "You are not authorized to access this service. Please try to authenticate first."
+                    "You are not authorized to access this service. Please try to authenticate first and make sure you have signed on on our web-site with a Google email account."
                 )
             else:
                 print(
@@ -754,7 +761,7 @@ In case the service has been recently started please wait 5 minutes for it to be
             or self._refresh_token_expiration_time is None
         ):
             print(
-                "You are not authorized to access this service. Please try to authenticate first."
+                "You are not authorized to access this service. Please try to authenticate first and make sure you have signed on on our web-site with a Google email account."
             )
             return False
         if self.is_refresh_token_expired():
@@ -865,19 +872,31 @@ In case the service has been recently started please wait 5 minutes for it to be
 
     def _get_autehntication_code(self):
 
-        response = requests.get(
-            self._show_code_callback_url,
-            params={"state": self._state},
-            verify=self._use_https,
+        timeout_seconds = 6
+        start_time = time.time()
+
+        try:
+            while (time.time() - start_time) < timeout_seconds:
+                response = requests.get(
+                    self._show_code_callback_url,
+                    params={"state": self._state},
+                    verify=self._use_https,
+                )
+                # TODO: what if I use a wrong email account
+                if response.status_code == 400:
+                    if response.text == "Authorization state is missing.":
+                        raise Exception()
+                    time.sleep(1)
+                    continue
+                data = response.text
+                auth_code = data.split(": ")[1]
+                return auth_code
+        except:
+            pass
+
+        raise AuthorizationFailure(
+            "Authorization code was not received. Please make sure you are using a Google account which you have signed-on our web-site. If our website is not online and please try again later."
         )
-        # TODO: what if I use a wrong email account
-        if response.status_code == 400:
-            raise AuthorizationFailure(
-                "Authorization code was not received. Please make sure you are using a Google account which you have signed-on our web-site. If our website is not online and please try again later."
-            )
-        data = response.text
-        auth_code = data.split(": ")[1]
-        return auth_code
 
     def is_valid_uuid(self, value: str) -> bool:
         try:
