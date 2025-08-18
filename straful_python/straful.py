@@ -691,9 +691,11 @@ In case the service has been recently started please wait 5 minutes for it to be
             status_code = response.status_code
             if status_code == 200:
                 backends = response.json()
-                for backend in backends:
+                for backend in backends["$values"]:
                     print(
                         backend["name"],
+                        "-",
+                        f"no qubits: {backend['noQubits']}",
                         "-",
                         "Online" if backend["online"] else "Offline",
                     )
