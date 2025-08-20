@@ -2,6 +2,7 @@ import base64
 import io
 import json
 import numpy as np
+import qiskit
 import requests
 import secrets
 import time
@@ -592,6 +593,7 @@ In case the service has been recently started please wait 5 minutes for it to be
                     "Circuits": [],
                     "Shots": shots,
                     "Comments": comments,
+                    "QiskitVersion": qiskit.__version__,
                 }
             elif circuits is not None:
                 job_data = {
@@ -600,6 +602,7 @@ In case the service has been recently started please wait 5 minutes for it to be
                     "Circuits": [serialize_circuit(circuit) for circuit in circuits],
                     "Shots": shots,
                     "Comments": comments,
+                    "QiskitVersion": qiskit.__version__,
                 }
             (status_code, result) = self._make_post_request(
                 f"{self._asp_net_url}/api/job", job_data
@@ -665,6 +668,7 @@ In case the service has been recently started please wait 5 minutes for it to be
                 "Comments": comments,
                 "InputDataLabels": input_data_labels,
                 "InputDataItems": input_data_items,
+                "QiskitVersion": qiskit.__version__,
             }
             (status_code, result) = self._make_post_request(
                 f"{self._asp_net_url}/api/workflow-job", job_data
